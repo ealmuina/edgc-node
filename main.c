@@ -43,11 +43,25 @@ int main() {
 #pragma clang diagnostic ignored "-Wmissing-noreturn"
     while (1) {
         // Read stats in buffer
-        FILE *file = fopen("/proc/loadavg", "r");
+        FILE *file = fopen("/proc/cpuinfo", "r");
         int n = fread(buffer1, sizeof(char), BUFFER_SIZE, file);
         buffer1[n - 1] = 0;
+        for (int i = 0; i < n; ++i) {
+            switch (buffer1[i]) {
+                case '\n': {
+                    buffer1[i] = '|';
+                    break;
+                }
+                case '\t': {
+                    buffer1[i] = ' ';
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
         fclose(file);
-        sprintf(buffer2, "{\"loadavg\":\"%s\"}", buffer1);
+        sprintf(buffer2, "{\"cpuinfo\":\"%s\"}", buffer1);
 
         sendto(sockfd, buffer2, strlen(buffer2), 0, (struct sockaddr *) &servaddr, sizeof(servaddr));
         print_log("Statistics broadcast");
