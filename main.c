@@ -18,10 +18,43 @@ void print_log(char *msg) {
     printf("[%s] %s\n", time, msg);
 }
 
+void add_file_to_json(char *path, char *json, char *key) {
+    char buffer[BUFFER_SIZE], entry[BUFFER_SIZE];
+
+    // Read file content into buffer
+    FILE *file = fopen(path, "r");
+    int n = fread(buffer, sizeof(char), BUFFER_SIZE, file);
+    fclose(file);
+    buffer[n - 1] = 0;
+
+    // Replace \n and \t
+    for (int i = 0; i < n; ++i) {
+        switch (buffer[i]) {
+            case '\n': {
+                buffer[i] = '|';
+                break;
+            }
+            case '\t': {
+                buffer[i] = ' ';
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    // Add buffer content to the json object
+    int len = strlen(json);
+    if (len != 1)
+        json[len - 1] = ',';
+    sprintf(entry, "\"%s\":\"%s\"}", key, buffer);
+    strcat(json, entry);
+}
+
 // Driver code 
 int main() {
     int sockfd;
-    char buffer1[BUFFER_SIZE], buffer2[BUFFER_SIZE];
+    char buffer[BUFFER_SIZE];
     struct sockaddr_in servaddr;
 
     // Creating socket file descriptor
@@ -43,27 +76,11 @@ int main() {
 #pragma clang diagnostic ignored "-Wmissing-noreturn"
     while (1) {
         // Read stats in buffer
-        FILE *file = fopen("/proc/cpuinfo", "r");
-        int n = fread(buffer1, sizeof(char), BUFFER_SIZE, file);
-        buffer1[n - 1] = 0;
-        for (int i = 0; i < n; ++i) {
-            switch (buffer1[i]) {
-                case '\n': {
-                    buffer1[i] = '|';
-                    break;
-                }
-                case '\t': {
-                    buffer1[i] = ' ';
-                    break;
-                }
-                default:
-                    break;
-            }
-        }
-        fclose(file);
-        sprintf(buffer2, "{\"cpuinfo\":\"%s\"}", buffer1);
+        sprintf(buffer, "{");
+        add_file_to_json("/proc/cpuinfo", buffer, "cpuinfo");
+        add_file_to_json("/proc/meminfo", buffer, "meminfo");
 
-        sendto(sockfd, buffer2, strlen(buffer2), 0, (struct sockaddr *) &servaddr, sizeof(servaddr));
+        sendto(sockfd, buffer, strlen(buffer), 0, (struct sockaddr *) &servaddr, sizeof(servaddr));
         print_log("Statistics broadcast");
         fflush(stdout);
         sleep(1); // broadcast every 5 seconds
