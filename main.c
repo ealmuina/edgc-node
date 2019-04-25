@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/sysinfo.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <time.h>
@@ -75,18 +76,28 @@ int main() {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wmissing-noreturn"
     while (1) {
-        // Read stats in buffer
-        sprintf(buffer, "{");
-        add_file_to_json("/proc/cpuinfo", buffer, "cpuinfo");
-        add_file_to_json("/proc/meminfo", buffer, "meminfo");
+        // Move the last 5 minutes load to buffer
+        double loadavg[3];
+        getloadavg(loadavg, 3);
+        memcpy(buffer, loadavg + 1, sizeof(double));
 
-        sendto(sockfd, buffer, strlen(buffer), 0, (struct sockaddr *) &servaddr, sizeof(servaddr));
+        // Move the number of processors to buffer
+        int processors = get_nprocs();
+        memcpy(buffer + sizeof(double), &processors, sizeof(int));
+
+        int offset = sizeof(double) + sizeof(int);
+        char *stats = buffer + offset;
+
+        // Read stats in buffer
+        sprintf(stats, "{");
+        add_file_to_json("/proc/cpuinfo", stats, "cpuinfo");
+        add_file_to_json("/proc/meminfo", stats, "meminfo");
+
+        int total_bytes = offset + strlen(stats);
+        sendto(sockfd, buffer, total_bytes, 0, (struct sockaddr *) &servaddr, sizeof(servaddr));
         print_log("Statistics broadcast");
         fflush(stdout);
         sleep(1); // broadcast every 5 seconds
     }
 #pragma clang diagnostic pop
-
-    close(sockfd);
-    return 0;
 } 
