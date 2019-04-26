@@ -11,6 +11,7 @@
 
 #define PORT 9910
 #define BUFFER_SIZE (256 * 1024)  /* 256 KB */
+#define REPORT_INTERVAL 5 /* seconds */
 
 void print_log(char *msg) {
     time_t rawtime;
@@ -52,6 +53,40 @@ void add_file_to_json(char *path, char *json, char *key) {
     strcat(json, entry);
 }
 
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "cert-err34-c"
+
+void get_cpu_usage(float *stat) {
+    char str[100];
+    const char d[2] = " ";
+    char *token;
+    int i = 0;
+    long int sum = 0, idle = 0;
+
+    FILE *fp = fopen("/proc/stat", "r");
+    i = 0;
+    fgets(str, 100, fp);
+    fclose(fp);
+    token = strtok(str, d);
+
+    while (token != NULL) {
+        token = strtok(NULL, d);
+        if (token != NULL) {
+            sum += atoi(token);
+
+            if (i == 3)
+                idle = atoi(token);
+
+            i++;
+        }
+    }
+
+    stat[0] = idle;
+    stat[1] = sum - idle;
+}
+
+#pragma clang diagnostic pop
+
 // Driver code 
 int main() {
     int sockfd;
@@ -73,19 +108,27 @@ int main() {
     servaddr.sin_port = htons(PORT);
     servaddr.sin_addr.s_addr = INADDR_ANY;
 
+    float cpu_use[2], last_cpu_use[2];
+    get_cpu_usage(last_cpu_use);
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wmissing-noreturn"
     while (1) {
-        // Move the last 5 minutes load to buffer
-        double loadavg[3];
-        getloadavg(loadavg, 3);
-        memcpy(buffer, loadavg + 1, sizeof(double));
+        sleep(REPORT_INTERVAL); // broadcast every REPORT_INTERVAL seconds
+
+        // Move the load from the last monitoring interval to buffer
+        get_cpu_usage(cpu_use);
+        float idle = cpu_use[0] - last_cpu_use[0];
+        float running = cpu_use[1] - last_cpu_use[1];
+        float running_rate = running / (running + idle);
+        memcpy(last_cpu_use, cpu_use, 2 * sizeof(float));
+        memcpy(buffer, &running_rate, sizeof(float));
 
         // Move the number of processors to buffer
         int processors = get_nprocs();
-        memcpy(buffer + sizeof(double), &processors, sizeof(int));
+        memcpy(buffer + sizeof(float), &processors, sizeof(int));
 
-        int offset = sizeof(double) + sizeof(int);
+        int offset = sizeof(float) + sizeof(int);
         char *stats = buffer + offset;
 
         // Read stats in buffer
@@ -95,9 +138,9 @@ int main() {
 
         int total_bytes = offset + strlen(stats);
         sendto(sockfd, buffer, total_bytes, 0, (struct sockaddr *) &servaddr, sizeof(servaddr));
-        print_log("Statistics broadcast");
+        sprintf(buffer, "Statistics broadcast. CPU usage in the last %d seconds: %.2f", REPORT_INTERVAL, running_rate);
+        print_log(buffer);
         fflush(stdout);
-        sleep(1); // broadcast every 5 seconds
     }
 #pragma clang diagnostic pop
 } 
