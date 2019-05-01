@@ -11,6 +11,7 @@
 
 #define PORT 9910
 #define BUFFER_SIZE (256 * 1024)  /* 256 KB */
+#define NAME_LENGTH_MAX 1024
 #define REPORT_INTERVAL 5 /* seconds */
 
 void print_log(char *msg) {
@@ -116,20 +117,35 @@ int main() {
     while (1) {
         sleep(REPORT_INTERVAL); // broadcast every REPORT_INTERVAL seconds
 
+        // Read the hostname
+        char hostname[NAME_LENGTH_MAX];
+        FILE *fd = fopen("/etc/hostname", "r");
+        fread(hostname, sizeof(char), BUFFER_SIZE, fd);
+        fclose(fd);
+
+        // Add hostname to buffer
+        int len = strlen(hostname);
+        strcpy(buffer, hostname);
+        buffer[len - 1] = 0; // Remove the \n at the end
+
+        int offset = len;
+        char *stats = buffer + offset;
+
         // Move the load from the last monitoring interval to buffer
         get_cpu_usage(cpu_use);
         float idle = cpu_use[0] - last_cpu_use[0];
         float running = cpu_use[1] - last_cpu_use[1];
         float running_rate = running / (running + idle);
         memcpy(last_cpu_use, cpu_use, 2 * sizeof(float));
-        memcpy(buffer, &running_rate, sizeof(float));
+        memcpy(stats, &running_rate, sizeof(float));
+        offset += sizeof(float);
 
         // Move the number of processors to buffer
         int processors = get_nprocs();
-        memcpy(buffer + sizeof(float), &processors, sizeof(int));
+        memcpy(buffer + offset, &processors, sizeof(int));
 
-        int offset = sizeof(float) + sizeof(int);
-        char *stats = buffer + offset;
+        offset += sizeof(int);
+        stats = buffer + offset;
 
         // Read stats in buffer
         sprintf(stats, "{");
