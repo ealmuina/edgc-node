@@ -107,7 +107,7 @@ int main() {
     // Filling server information
     servaddr.sin_family = AF_INET;
     servaddr.sin_port = htons(PORT);
-    servaddr.sin_addr.s_addr = INADDR_ANY;
+    servaddr.sin_addr.s_addr = INADDR_BROADCAST;
 
     float cpu_use[2], last_cpu_use[2];
     get_cpu_usage(last_cpu_use);
