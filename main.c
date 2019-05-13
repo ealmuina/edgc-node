@@ -8,10 +8,11 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <time.h>
+#include <ifaddrs.h>
 
 #define PORT 9910
 #define BUFFER_SIZE (256 * 1024)  /* 256 KB */
-#define NAME_LENGTH_MAX 1024
+#define FIELD_SIZE 1024
 #define REPORT_INTERVAL 5 /* seconds */
 
 void print_log(char *msg) {
@@ -26,6 +27,9 @@ void add_file_to_json(char *path, char *json, char *key) {
 
     // Read file content into buffer
     FILE *file = fopen(path, "r");
+
+    if (!file) return;
+
     int n = fread(buffer, sizeof(char), BUFFER_SIZE, file);
     fclose(file);
     buffer[n - 1] = 0;
@@ -88,6 +92,28 @@ void get_cpu_usage(float *stat) {
 
 #pragma clang diagnostic pop
 
+void get_network_device(char *network_dev) {
+    struct ifaddrs *ifaddr;
+    struct ifaddrs *ifa;
+    getifaddrs(&ifaddr);
+
+    network_dev[0] = 0;
+
+    // look which interface contains the wanted IP.
+    // When found, ifa->ifa_name contains the name of the interface (eth0, eth1, ppp0...)
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr) {
+            if (AF_INET == ifa->ifa_addr->sa_family) {
+                if (ifa->ifa_name && strncmp("eth", ifa->ifa_name, 3) == 0) {
+                    strcpy(network_dev, ifa->ifa_name);
+                    break;
+                }
+            }
+        }
+    }
+    freeifaddrs(ifaddr);
+}
+
 // Driver code 
 int main() {
     int sockfd;
@@ -109,6 +135,19 @@ int main() {
     servaddr.sin_port = htons(PORT);
     servaddr.sin_addr.s_addr = INADDR_BROADCAST;
 
+    // Read the hostname
+    char hostname[FIELD_SIZE];
+    FILE *fd = fopen("/etc/hostname", "r");
+    fread(hostname, sizeof(char), FIELD_SIZE, fd);
+    fclose(fd);
+
+    // Read number of processors
+    int processors = get_nprocs();
+
+    // Get name of network device
+    char network_dev[FIELD_SIZE];
+    get_network_device(network_dev);
+
     float cpu_use[2], last_cpu_use[2];
     get_cpu_usage(last_cpu_use);
 
@@ -116,12 +155,6 @@ int main() {
 #pragma clang diagnostic ignored "-Wmissing-noreturn"
     while (1) {
         sleep(REPORT_INTERVAL); // broadcast every REPORT_INTERVAL seconds
-
-        // Read the hostname
-        char hostname[NAME_LENGTH_MAX];
-        FILE *fd = fopen("/etc/hostname", "r");
-        fread(hostname, sizeof(char), BUFFER_SIZE, fd);
-        fclose(fd);
 
         // Add hostname to buffer
         int len = strlen(hostname);
@@ -141,9 +174,7 @@ int main() {
         offset += sizeof(float);
 
         // Move the number of processors to buffer
-        int processors = get_nprocs();
         memcpy(buffer + offset, &processors, sizeof(int));
-
         offset += sizeof(int);
         stats = buffer + offset;
 
@@ -151,6 +182,11 @@ int main() {
         sprintf(stats, "{");
         add_file_to_json("/proc/cpuinfo", stats, "cpuinfo");
         add_file_to_json("/proc/meminfo", stats, "meminfo");
+        if (*network_dev) {
+            char speed_file[FIELD_SIZE];
+            sprintf(speed_file, "/sys/class/net/%s/speed", network_dev);
+            add_file_to_json(speed_file, stats, "speed");
+        }
 
         int total_bytes = offset + strlen(stats);
         sendto(sockfd, buffer, total_bytes, 0, (struct sockaddr *) &servaddr, sizeof(servaddr));
