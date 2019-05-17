@@ -100,13 +100,13 @@ void get_cpu_usage(float *stat) {
 
 #pragma clang diagnostic pop
 
-double measure_bandwidth(char *server) {
+double measure_bandwidth(char *server, char *localhost) {
     char buffer[FIELD_SIZE];
 
     sprintf(buffer, "Measuring bandwidth to domain master '%s'...", server);
     print_log(buffer);
 
-    sprintf(buffer, "mpirun -n 2 -hosts localhost,%s ./mpi_bandwidth", server);
+    sprintf(buffer, "mpirun -n 2 -hosts %s,%s ./mpi_bandwidth", localhost, server);
     printf("\t-> %s\n", buffer);
     system(buffer);
 }
@@ -118,7 +118,7 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    int sockfd;
+    int sockfd, len;
     char buffer[BUFFER_SIZE];
     struct sockaddr_in servaddr;
     struct hostent *he;
@@ -145,14 +145,18 @@ int main(int argc, char *argv[]) {
     // Read the hostname
     char hostname[FIELD_SIZE];
     FILE *fd = fopen("/etc/hostname", "r");
-    fread(hostname, sizeof(char), FIELD_SIZE, fd);
+    len = fread(hostname, sizeof(char), FIELD_SIZE, fd);
+    hostname[len - 1] = 0; // Remove the \n at the end
     fclose(fd);
 
     // Read number of processors
     int processors = get_nprocs();
 
     // Measure MPI bandwidth
-    measure_bandwidth(argv[1]);
+    char *localhost = malloc(FIELD_SIZE);
+    strcpy(localhost, hostname);
+    measure_bandwidth(argv[1], localhost);
+    free(localhost);
     print_log("MPI bandwidth stored to file 'bandwidth.txt'.");
 
     // Benchmark CPU
@@ -170,11 +174,10 @@ int main(int argc, char *argv[]) {
         sleep(REPORT_INTERVAL); // broadcast every REPORT_INTERVAL seconds
 
         // Add hostname to buffer
-        int len = strlen(hostname);
+        len = strlen(hostname);
         strcpy(buffer, hostname);
-        buffer[len - 1] = 0; // Remove the \n at the end
 
-        int offset = len;
+        int offset = len + 1;
         char *stats = buffer + offset;
 
         // Move the load from the last monitoring interval to buffer
