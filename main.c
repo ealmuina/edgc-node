@@ -9,6 +9,9 @@
 #include <netinet/in.h>
 #include <time.h>
 #include <ifaddrs.h>
+#include <netdb.h>
+
+#include "include/flops.h"
 
 #define PORT 9910
 #define BUFFER_SIZE (256 * 1024)  /* 256 KB */
@@ -22,8 +25,17 @@ void print_log(char *msg) {
     printf("[%s] %s\n", time, msg);
 }
 
+void add_buffer_to_json(char *buffer, char *json, char *key) {
+    char entry[BUFFER_SIZE];
+    int len = strlen(json);
+    if (len != 1)
+        json[len - 1] = ',';
+    sprintf(entry, "\"%s\":\"%s\"}", key, buffer);
+    strcat(json, entry);
+}
+
 void add_file_to_json(char *path, char *json, char *key) {
-    char buffer[BUFFER_SIZE], entry[BUFFER_SIZE];
+    char *buffer = malloc(BUFFER_SIZE);
 
     // Read file content into buffer
     FILE *file = fopen(path, "r");
@@ -50,12 +62,8 @@ void add_file_to_json(char *path, char *json, char *key) {
         }
     }
 
-    // Add buffer content to the json object
-    int len = strlen(json);
-    if (len != 1)
-        json[len - 1] = ',';
-    sprintf(entry, "\"%s\":\"%s\"}", key, buffer);
-    strcat(json, entry);
+    add_buffer_to_json(buffer, json, key);
+    free(buffer);
 }
 
 #pragma clang diagnostic push
@@ -92,48 +100,47 @@ void get_cpu_usage(float *stat) {
 
 #pragma clang diagnostic pop
 
-void get_network_device(char *network_dev) {
-    struct ifaddrs *ifaddr;
-    struct ifaddrs *ifa;
-    getifaddrs(&ifaddr);
+double measure_bandwidth(char *server) {
+    char buffer[FIELD_SIZE];
 
-    network_dev[0] = 0;
+    sprintf(buffer, "Measuring bandwidth to domain master '%s'...", server);
+    print_log(buffer);
 
-    // look which interface contains the wanted IP.
-    // When found, ifa->ifa_name contains the name of the interface (eth0, eth1, ppp0...)
-    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
-        if (ifa->ifa_addr) {
-            if (AF_INET == ifa->ifa_addr->sa_family) {
-                if (ifa->ifa_name && strncmp("eth", ifa->ifa_name, 3) == 0) {
-                    strcpy(network_dev, ifa->ifa_name);
-                    break;
-                }
-            }
-        }
-    }
-    freeifaddrs(ifaddr);
+    sprintf(buffer, "mpirun -n 2 -hosts localhost,%s ./mpi_bandwidth", server);
+    printf("\t-> %s\n", buffer);
+    system(buffer);
 }
 
 // Driver code 
-int main() {
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        printf("Usage: edgc-node <domain master hostname>");
+        exit(EXIT_FAILURE);
+    }
+
     int sockfd;
     char buffer[BUFFER_SIZE];
     struct sockaddr_in servaddr;
+    struct hostent *he;
+
+    // Getting domain master address
+    if ((he = gethostbyname(argv[1])) == NULL) {  /* get the host info */
+        perror("gethostbyname");
+        exit(EXIT_FAILURE);
+    }
 
     // Creating socket file descriptor
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("socket creation failed");
         exit(EXIT_FAILURE);
     }
-    int broadcastEnable = 1;
-    setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
 
     memset(&servaddr, 0, sizeof(servaddr));
 
     // Filling server information
     servaddr.sin_family = AF_INET;
     servaddr.sin_port = htons(PORT);
-    servaddr.sin_addr.s_addr = INADDR_BROADCAST;
+    servaddr.sin_addr = *((struct in_addr *) he->h_addr);
 
     // Read the hostname
     char hostname[FIELD_SIZE];
@@ -144,9 +151,15 @@ int main() {
     // Read number of processors
     int processors = get_nprocs();
 
-    // Get name of network device
-    char network_dev[FIELD_SIZE];
-    get_network_device(network_dev);
+    // Measure MPI bandwidth
+    measure_bandwidth(argv[1]);
+    print_log("MPI bandwidth stored to file 'bandwidth.txt'.");
+
+    // Benchmark CPU
+    print_log("Measuring CPU performance...");
+    char mflops[FIELD_SIZE];
+    sprintf(mflops, "%.4f", measure_mflops());
+    print_log("Benchmark completed 'MFLOPS(3)' will be used.");
 
     float cpu_use[2], last_cpu_use[2];
     get_cpu_usage(last_cpu_use);
@@ -182,15 +195,13 @@ int main() {
         sprintf(stats, "{");
         add_file_to_json("/proc/cpuinfo", stats, "cpuinfo");
         add_file_to_json("/proc/meminfo", stats, "meminfo");
-        if (*network_dev) {
-            char speed_file[FIELD_SIZE];
-            sprintf(speed_file, "/sys/class/net/%s/speed", network_dev);
-            add_file_to_json(speed_file, stats, "speed");
-        }
+        add_file_to_json("bandwidth.txt", stats, "mpi_bandwidth");
+        add_buffer_to_json(mflops, stats, "mflops");
 
         int total_bytes = offset + strlen(stats);
         sendto(sockfd, buffer, total_bytes, 0, (struct sockaddr *) &servaddr, sizeof(servaddr));
-        sprintf(buffer, "Statistics broadcast. CPU usage in the last %d seconds: %.2f", REPORT_INTERVAL, running_rate);
+        sprintf(buffer, "Statistics sent to domain master '%s'.\n\t CPU usage in the last %d seconds: %.2f", argv[1],
+                REPORT_INTERVAL, running_rate);
         print_log(buffer);
         fflush(stdout);
     }
