@@ -114,7 +114,7 @@ double measure_bandwidth(char *server) {
 // Driver code 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
-        printf("Usage: edgc-node <domain master hostname>");
+        printf("Usage: edgc-node <domain master hostname>\n");
         exit(EXIT_FAILURE);
     }
 
