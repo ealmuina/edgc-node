@@ -128,9 +128,10 @@ int main(int argc, char *argv[]) {
                        bestall / (numtasks / 2), avgall / (numtasks / 2), worstall / (numtasks / 2));
 
                 // Store overall average to file bandwidth.txt
-                char mpi_bandwidth[1024];
+                char mpi_bandwidth[1024], filename[1024];
                 sprintf(mpi_bandwidth, "%.4f", (avgall / (numtasks / 2)) * 8);
-                FILE *file = fopen("bandwidth.txt", "w");
+                sprintf(filename, "bandwidth-%s.txt", host);
+                FILE *file = fopen(filename, "w");
                 fwrite(mpi_bandwidth, sizeof(char), strlen(mpi_bandwidth), file);
                 fclose(file);
 

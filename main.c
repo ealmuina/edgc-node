@@ -153,11 +153,13 @@ int main(int argc, char *argv[]) {
     int processors = get_nprocs();
 
     // Measure MPI bandwidth
-    char *localhost = malloc(FIELD_SIZE);
+    char *localhost = malloc(FIELD_SIZE), bandwidth_file[FIELD_SIZE];
     strcpy(localhost, hostname);
     measure_bandwidth(argv[1], localhost);
     free(localhost);
-    print_log("MPI bandwidth stored to file 'bandwidth.txt'.");
+    sprintf(bandwidth_file, "bandwidth-%s.txt", hostname);
+    sprintf(buffer, "MPI bandwidth stored to file '%s'.", bandwidth_file);
+    print_log(buffer);
 
     // Benchmark CPU
     print_log("Measuring CPU performance...");
@@ -198,7 +200,7 @@ int main(int argc, char *argv[]) {
         sprintf(stats, "{");
         add_file_to_json("/proc/cpuinfo", stats, "cpuinfo");
         add_file_to_json("/proc/meminfo", stats, "meminfo");
-        add_file_to_json("bandwidth.txt", stats, "mpi_bandwidth");
+        add_file_to_json(bandwidth_file, stats, "mpi_bandwidth");
         add_buffer_to_json(mflops, stats, "mflops");
 
         int total_bytes = offset + strlen(stats);
