@@ -16,7 +16,7 @@
 #define PORT 9910
 #define BUFFER_SIZE (256 * 1024)  /* 256 KB */
 #define FIELD_SIZE 1024
-#define REPORT_INTERVAL 5 /* seconds */
+#define REPORT_INTERVAL 60 /* seconds */
 
 void print_log(char *msg) {
     time_t rawtime;
@@ -87,8 +87,8 @@ void get_cpu_usage(float *stat) {
         if (token != NULL) {
             sum += atoi(token);
 
-            if (i == 3)
-                idle = atoi(token);
+            if (i >= 3)
+                idle += atoi(token);
 
             i++;
         }
