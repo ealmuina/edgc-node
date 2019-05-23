@@ -16,7 +16,7 @@
 #define PORT 9910
 #define BUFFER_SIZE (256 * 1024)  /* 256 KB */
 #define FIELD_SIZE 1024
-#define REPORT_INTERVAL 60 /* seconds */
+#define REPORT_INTERVAL 30 /* seconds */
 
 void print_log(char *msg) {
     time_t rawtime;
