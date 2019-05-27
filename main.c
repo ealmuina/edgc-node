@@ -7,64 +7,16 @@
 #include <sys/sysinfo.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <time.h>
+
 #include <ifaddrs.h>
 #include <netdb.h>
 
 #include "include/flops.h"
+#include "include/utils.h"
 
 #define PORT 9910
-#define BUFFER_SIZE (256 * 1024)  /* 256 KB */
-#define FIELD_SIZE 1024
-#define REPORT_INTERVAL 30 /* seconds */
-
-void print_log(char *msg) {
-    time_t rawtime;
-    time(&rawtime);
-    char *time = strtok(ctime(&rawtime), "\n");
-    printf("[%s] %s\n", time, msg);
-}
-
-void add_buffer_to_json(char *buffer, char *json, char *key) {
-    char entry[BUFFER_SIZE];
-    int len = strlen(json);
-    if (len != 1)
-        json[len - 1] = ',';
-    sprintf(entry, "\"%s\":\"%s\"}", key, buffer);
-    strcat(json, entry);
-}
-
-void add_file_to_json(char *path, char *json, char *key) {
-    char *buffer = malloc(BUFFER_SIZE);
-
-    // Read file content into buffer
-    FILE *file = fopen(path, "r");
-
-    if (!file) return;
-
-    int n = fread(buffer, sizeof(char), BUFFER_SIZE, file);
-    fclose(file);
-    buffer[n - 1] = 0;
-
-    // Replace \n and \t
-    for (int i = 0; i < n; ++i) {
-        switch (buffer[i]) {
-            case '\n': {
-                buffer[i] = '|';
-                break;
-            }
-            case '\t': {
-                buffer[i] = ' ';
-                break;
-            }
-            default:
-                break;
-        }
-    }
-
-    add_buffer_to_json(buffer, json, key);
-    free(buffer);
-}
+#define REPORT_INTERVAL_MEAN 20 /* seconds */
+#define REPORT_INTERVAL_STD 4 /* seconds */
 
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "cert-err34-c"
@@ -173,7 +125,9 @@ int main(int argc, char *argv[]) {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wmissing-noreturn"
     while (1) {
-        sleep(REPORT_INTERVAL); // broadcast every REPORT_INTERVAL seconds
+        // Broadcasts interval x~N(REPORT_INTERVAL_MEAN, REPORT_INTERVAL_STD**2)
+        int interval = (int) randn(REPORT_INTERVAL_MEAN, REPORT_INTERVAL_STD);
+        sleep(interval);
 
         // Add hostname to buffer
         len = strlen(hostname);
@@ -206,7 +160,7 @@ int main(int argc, char *argv[]) {
         int total_bytes = offset + strlen(stats);
         sendto(sockfd, buffer, total_bytes, 0, (struct sockaddr *) &servaddr, sizeof(servaddr));
         sprintf(buffer, "Statistics sent to domain master '%s'.\n\t CPU usage in the last %d seconds: %.2f", argv[1],
-                REPORT_INTERVAL, running_rate);
+                interval, running_rate);
         print_log(buffer);
         fflush(stdout);
     }
