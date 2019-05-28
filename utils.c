@@ -59,8 +59,8 @@ double randn(double mu, double sigma) {
     }
 
     do {
-        U1 = -1 + ((double) rand() / RAND_MAX) * 2;
-        U2 = -1 + ((double) rand() / RAND_MAX) * 2;
+        U1 = -1 + ((double) random() / RAND_MAX) * 2;
+        U2 = -1 + ((double) random() / RAND_MAX) * 2;
         W = pow(U1, 2) + pow(U2, 2);
     } while (W >= 1 || W == 0);
 

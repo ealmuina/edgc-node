@@ -133,6 +133,9 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    // Initialize random number generator
+    srandom(time(NULL));
+
     int sockfd, len;
     char buffer[BUFFER_SIZE];
     struct sockaddr_in servaddr;
