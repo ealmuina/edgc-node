@@ -206,7 +206,7 @@ int main(int argc, char *argv[]) {
         char entry[FIELD_SIZE];
         time_t now;
         time(&now);
-        sprintf(entry, "%ld %.4f", now - start, load);
+        sprintf(entry, "%ld %.4f\n", now - start, load);
         fwrite(entry, sizeof(char), strlen(entry), load_history);
 
         sendto(sockfd, buffer, offset, 0, (struct sockaddr *) &servaddr, sizeof(servaddr));
