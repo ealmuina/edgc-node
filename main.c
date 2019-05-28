@@ -20,7 +20,6 @@
 #define REPORT_INTERVAL_MEAN 20 /* seconds */
 #define REPORT_INTERVAL_STD 4 /* seconds */
 
-int node_info_size = 0;
 char node_info[BUFFER_SIZE];
 
 void get_cpu_usage(float *stat) {
@@ -82,8 +81,7 @@ void build_node_info(char *domain_master, char *hostname) {
     // Move the number of processors to node_info
     int processors = get_nprocs();
     memcpy(node_info, &processors, sizeof(int));
-    node_info_size = sizeof(int);
-    char *stats = node_info + node_info_size;
+    char *stats = node_info + sizeof(int);
 
     // Read stats into node_info
     sprintf(stats, "{");
@@ -91,8 +89,6 @@ void build_node_info(char *domain_master, char *hostname) {
     add_file_to_json("/proc/meminfo", stats, "meminfo");
     add_file_to_json(bandwidth_file, stats, "mpi_bandwidth");
     add_buffer_to_json(mflops, stats, "mflops");
-
-    node_info_size += strlen(stats);
 }
 
 void *full_reporter(void *args) {
@@ -120,7 +116,7 @@ void *full_reporter(void *args) {
         // Send full information every time it is requested
         len = sizeof(cli);
         connfd = accept(sockfd, (struct sockaddr *) &cli, &len);
-        write(connfd, node_info, node_info_size);
+        write(connfd, node_info, sizeof(node_info));
         print_log("Requested full information of the node.");
     }
 #pragma clang diagnostic pop
