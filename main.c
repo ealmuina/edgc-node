@@ -210,7 +210,7 @@ int main(int argc, char *argv[]) {
         fwrite(entry, sizeof(char), strlen(entry), load_history);
 
         sendto(sockfd, buffer, offset, 0, (struct sockaddr *) &servaddr, sizeof(servaddr));
-        sprintf(buffer, "Sent to '%s' load in the last %d seconds: %.2f'.", argv[1], interval, load);
+        sprintf(buffer, "Sent to '%s' load in the last %d seconds: %.2f.", argv[1], interval, load);
         print_log(buffer);
 
         fflush(load_history);
