@@ -10,16 +10,18 @@
 
 #include <ifaddrs.h>
 #include <netdb.h>
+#include <pthread.h>
 
 #include "include/flops.h"
 #include "include/utils.h"
 
-#define PORT 9910
+#define LITE_PORT 9910
+#define FULL_PORT 9913
 #define REPORT_INTERVAL_MEAN 20 /* seconds */
 #define REPORT_INTERVAL_STD 4 /* seconds */
 
-#pragma clang diagnostic push
-#pragma ide diagnostic ignored "cert-err34-c"
+int node_info_size = 0;
+char node_info[BUFFER_SIZE];
 
 void get_cpu_usage(float *stat) {
     char str[100];
@@ -50,8 +52,6 @@ void get_cpu_usage(float *stat) {
     stat[1] = sum - idle;
 }
 
-#pragma clang diagnostic pop
-
 double measure_bandwidth(char *server, char *localhost) {
     char buffer[FIELD_SIZE];
 
@@ -61,6 +61,69 @@ double measure_bandwidth(char *server, char *localhost) {
     sprintf(buffer, "mpirun -n 2 -hosts %s,%s ./mpi_bandwidth", localhost, server);
     printf("\t-> %s\n", buffer);
     system(buffer);
+}
+
+void build_node_info(char *domain_master, char *hostname) {
+    char buffer[FIELD_SIZE];
+
+    // Measure MPI bandwidth
+    char bandwidth_file[FIELD_SIZE];
+    measure_bandwidth(domain_master, hostname);
+    sprintf(bandwidth_file, "bandwidth-%s.txt", hostname);
+    sprintf(buffer, "MPI bandwidth stored to file '%s'.", bandwidth_file);
+    print_log(buffer);
+
+    // Benchmark CPU
+    print_log("Measuring CPU performance...");
+    char mflops[FIELD_SIZE];
+    sprintf(mflops, "%.4f", measure_mflops());
+    print_log("Benchmark completed 'MFLOPS(3)' will be used.");
+
+    // Move the number of processors to node_info
+    int processors = get_nprocs();
+    memcpy(node_info, &processors, sizeof(int));
+    node_info_size = sizeof(int);
+    char *stats = node_info + node_info_size;
+
+    // Read stats into node_info
+    sprintf(stats, "{");
+    add_file_to_json("/proc/cpuinfo", stats, "cpuinfo");
+    add_file_to_json("/proc/meminfo", stats, "meminfo");
+    add_file_to_json(bandwidth_file, stats, "mpi_bandwidth");
+    add_buffer_to_json(mflops, stats, "mflops");
+
+    node_info_size += strlen(stats);
+}
+
+void *full_reporter(void *args) {
+    int sockfd, connfd;
+    socklen_t len;
+    struct sockaddr_in servaddr, cli;
+
+    // socket create
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    bzero(&servaddr, sizeof(servaddr));
+
+    // assign IP, PORT
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    servaddr.sin_port = htons(FULL_PORT);
+
+    bind(sockfd, (struct sockaddr *) &servaddr, sizeof(servaddr));
+    listen(sockfd, 5);
+
+    print_log("Full report thread initialized.");
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-noreturn"
+    while (1) {
+        // Send full information every time it is requested
+        connfd = accept(sockfd, (struct sockaddr *) &cli, &len);
+        printf("%d\n", connfd);
+        write(connfd, node_info, node_info_size);
+        print_log("Requested full information of the node.");
+    }
+#pragma clang diagnostic pop
 }
 
 // Driver code 
@@ -91,7 +154,7 @@ int main(int argc, char *argv[]) {
 
     // Filling server information
     servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons(PORT);
+    servaddr.sin_port = htons(LITE_PORT);
     servaddr.sin_addr = *((struct in_addr *) he->h_addr);
 
     // Read the hostname
@@ -101,26 +164,20 @@ int main(int argc, char *argv[]) {
     hostname[len - 1] = 0; // Remove the \n at the end
     fclose(fd);
 
-    // Read number of processors
-    int processors = get_nprocs();
-
-    // Measure MPI bandwidth
-    char *localhost = malloc(FIELD_SIZE), bandwidth_file[FIELD_SIZE];
-    strcpy(localhost, hostname);
-    measure_bandwidth(argv[1], localhost);
-    free(localhost);
-    sprintf(bandwidth_file, "bandwidth-%s.txt", hostname);
-    sprintf(buffer, "MPI bandwidth stored to file '%s'.", bandwidth_file);
-    print_log(buffer);
-
-    // Benchmark CPU
-    print_log("Measuring CPU performance...");
-    char mflops[FIELD_SIZE];
-    sprintf(mflops, "%.4f", measure_mflops());
-    print_log("Benchmark completed 'MFLOPS(3)' will be used.");
-
     float cpu_use[2], last_cpu_use[2];
     get_cpu_usage(last_cpu_use);
+
+    // Open file to store load history
+    char load_filename[FIELD_SIZE];
+    sprintf(load_filename, "load-%s.log", hostname);
+    FILE *load_history = fopen(load_filename, "w");
+    time_t start; // stopwatch for reports
+    time(&start);
+
+    // Create separate thread for giving more details when requested
+    build_node_info(argv[1], hostname);
+    pthread_t m;
+    pthread_create(&m, NULL, full_reporter, NULL);
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wmissing-noreturn"
@@ -140,29 +197,23 @@ int main(int argc, char *argv[]) {
         get_cpu_usage(cpu_use);
         float idle = cpu_use[0] - last_cpu_use[0];
         float running = cpu_use[1] - last_cpu_use[1];
-        float running_rate = running / (running + idle);
+        float load = running / (running + idle);
         memcpy(last_cpu_use, cpu_use, 2 * sizeof(float));
-        memcpy(stats, &running_rate, sizeof(float));
+        memcpy(stats, &load, sizeof(float));
         offset += sizeof(float);
 
-        // Move the number of processors to buffer
-        memcpy(buffer + offset, &processors, sizeof(int));
-        offset += sizeof(int);
-        stats = buffer + offset;
+        // Log load in load history file
+        char entry[FIELD_SIZE];
+        time_t now;
+        time(&now);
+        sprintf(entry, "%ld %.4f", now - start, load);
+        fwrite(entry, sizeof(char), strlen(entry), load_history);
 
-        // Read stats in buffer
-        sprintf(stats, "{");
-        add_file_to_json("/proc/cpuinfo", stats, "cpuinfo");
-        add_file_to_json("/proc/meminfo", stats, "meminfo");
-        add_file_to_json(bandwidth_file, stats, "mpi_bandwidth");
-        add_buffer_to_json(mflops, stats, "mflops");
-
-        int total_bytes = offset + strlen(stats);
-        sendto(sockfd, buffer, total_bytes, 0, (struct sockaddr *) &servaddr, sizeof(servaddr));
-        sprintf(buffer, "Statistics sent to domain master '%s'.\n\t CPU usage in the last %d seconds: %.2f", argv[1],
-                interval, running_rate);
+        sendto(sockfd, buffer, offset, 0, (struct sockaddr *) &servaddr, sizeof(servaddr));
+        sprintf(buffer, "Sent to '%s' load in the last %d seconds: %.2f'.", argv[1], interval, load);
         print_log(buffer);
-        fflush(stdout);
+
+        fflush(load_history);
     }
 #pragma clang diagnostic pop
 } 

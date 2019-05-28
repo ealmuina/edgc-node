@@ -11,3 +11,4 @@ add_executable(mpi_bandwidth mpi_bandwidth.c)
 
 target_link_libraries(mpi_bandwidth ${MPI_C_LIBRARIES})
 target_link_libraries(edgc-node m)
+target_link_libraries(edgc-node pthread)
