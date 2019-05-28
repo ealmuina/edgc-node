@@ -116,7 +116,11 @@ void *full_reporter(void *args) {
         // Send full information every time it is requested
         len = sizeof(cli);
         connfd = accept(sockfd, (struct sockaddr *) &cli, &len);
-        write(connfd, node_info, sizeof(node_info));
+        int total = 0;
+        while (total < BUFFER_SIZE) {
+            int n = write(connfd, node_info + total, FIELD_SIZE);
+            total += n;
+        }
         print_log("Requested full information of the node.");
     }
 #pragma clang diagnostic pop
