@@ -17,8 +17,8 @@
 
 #define LITE_PORT 9910
 #define FULL_PORT 9913
-#define REPORT_INTERVAL_MEAN 10 /* seconds */
-#define REPORT_INTERVAL_STD 1 /* seconds */
+#define REPORT_INTERVAL_MEAN 20 /* seconds */
+#define REPORT_INTERVAL_STD 2 /* seconds */
 
 char node_info[BUFFER_SIZE];
 
