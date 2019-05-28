@@ -118,8 +118,8 @@ void *full_reporter(void *args) {
 #pragma clang diagnostic ignored "-Wmissing-noreturn"
     while (1) {
         // Send full information every time it is requested
+        len = sizeof(cli);
         connfd = accept(sockfd, (struct sockaddr *) &cli, &len);
-        printf("%d\n", connfd);
         write(connfd, node_info, node_info_size);
         print_log("Requested full information of the node.");
     }
