@@ -174,8 +174,6 @@ int main(int argc, char *argv[]) {
     char load_filename[FIELD_SIZE];
     sprintf(load_filename, "load-%s.log", hostname);
     FILE *load_history = fopen(load_filename, "w");
-    time_t start; // stopwatch for reports
-    time(&start);
 
     // Create separate thread for giving more details when requested
     build_node_info(argv[1], hostname);
@@ -209,7 +207,7 @@ int main(int argc, char *argv[]) {
         char entry[FIELD_SIZE];
         time_t now;
         time(&now);
-        sprintf(entry, "%ld %.4f\n", now - start, load);
+        sprintf(entry, "%ld\t%.4f\n", now, load);
         fwrite(entry, sizeof(char), strlen(entry), load_history);
 
         sendto(sockfd, buffer, offset, 0, (struct sockaddr *) &servaddr, sizeof(servaddr));
