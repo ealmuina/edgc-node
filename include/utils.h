@@ -7,7 +7,7 @@
 #include <time.h>
 #include <string.h>
 
-#define BUFFER_SIZE (2 * 1024 * 1024)  /* 2 MB */
+#define BUFFER_SIZE (512 * 1024)  /* 512 KB */
 #define FIELD_SIZE 1024
 
 void print_log(char *msg);
